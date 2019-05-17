@@ -11,12 +11,14 @@ from ps4gamecategory import limit_game_to_single_win, Stats
 SAVE_FILE = "ps4-stats.txt"
 DEFAULT_GAME_HISTORY = 5
 
+
 class Keys:
     game_wins = "Game Wins"
     played = "Games"
     winratio = "W/L"
     elorank = "Ranking"
     history = "History"
+
 
 def should_skip_game_year(game, year, nextyear):
     if not year:
@@ -26,18 +28,20 @@ def should_skip_game_year(game, year, nextyear):
     involved = year <= gametime < nextyear
     return not involved
 
+
 def calc_nextyear(year):
-    return year.replace(year = year.year + 1) if year else None
+    return year.replace(year=year.year + 1) if year else None
+
 
 class PS4History:
-    def __init__(self, negative_stats = set()):
+    def __init__(self, negative_stats=set()):
         self.games = []
         self.negative_stats = negative_stats
         self.load()
 
     def save(self):
         try:
-            with open(SAVE_FILE, "w") as f: # open as "w" since we rewrite the whole thing
+            with open(SAVE_FILE, "w") as f:  # open as "w" since we rewrite the whole thing
                 for g in self.games:
                     print >>f, "game {} {} {} {}".format(
                         g.message_timestamp,
@@ -46,7 +50,8 @@ class PS4History:
                         g.mode or "normal")
 
                     for stat in g.stats:
-                        print >>f, "  stat {} {} {}".format(stat.stat, stat.user, stat.voter)
+                        print >>f, "  stat {} {} {}".format(
+                            stat.stat, stat.user, stat.voter)
         except IOError:
             print >>sys.stderr, "exception saving state: {}".format(e)
 
@@ -64,16 +69,19 @@ class PS4History:
                         channel = tokens[2]
                         players = filter(len, tokens[3].split(","))
                         mode = None if tokens[4] == "normal" else tokens[4]
-                        current_game = PS4HistoricGame(message_timestamp, players, channel, mode)
+                        current_game = PS4HistoricGame(
+                            message_timestamp, players, channel, mode)
                         games.append(current_game)
                     elif tokens[0] == "stat":
                         if not current_game:
-                            print >>sys.stderr, "found stat \"{}\" without game".format(tokens[1])
+                            print >>sys.stderr, "found stat \"{}\" without game".format(
+                                tokens[1])
                             continue
                         stat, user, voter = tokens[1:]
                         current_game.stats.add(stat, user, voter)
                     else:
-                        print >>sys.stderr, "unknown {} line \"{}\"".format(SAVE_FILE, line)
+                        print >>sys.stderr, "unknown {} line \"{}\"".format(
+                            SAVE_FILE, line)
         except IOError:
             pass
         self.games = games
@@ -85,7 +93,8 @@ class PS4History:
         self.save()
 
     def cancel_game(self, game):
-        found = find(lambda g: g.message_timestamp == game.message.timestamp, self.games)
+        found = find(lambda g: g.message_timestamp ==
+                     game.message.timestamp, self.games)
         if not found:
             return
         self.games.remove(found)
@@ -119,11 +128,10 @@ class PS4History:
                 return True
         return False
 
-    def raw_stats(self, channel, year = None):
+    def raw_stats(self, channel, year=None):
         stats = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
         nextyear = calc_nextyear(year)
-
         for game in self.games:
             if channel and game.channel != channel:
                 continue
@@ -157,9 +165,9 @@ class PS4History:
                 winratio_str = format(winratio, ".2f")
                 userstats[Keys.winratio] = winratio_str
 
-        return stats # { mode: { user: { [stat]: int ... }, ... } }
+        return stats  # { mode: { user: { [stat]: int ... }, ... } }
 
-    def raw_elo(self, channel, year = None, k_factor = None):
+    def raw_elo(self, channel, year=None, k_factor=None, teams=False):
         nextyear = calc_nextyear(year)
 
         def game_is_this_channel(game):
@@ -195,13 +203,32 @@ class PS4History:
         elo_games = map(convert_to_elo_game, elo_games)
         elo_games = filter(game_can_elo, elo_games)
 
-        rankings = ps4elo.calculate_rankings(elo_games, k_factor)
+        if (teams):
+            return ps4elo.calculate_team_rankings(elo_games, k_factor)
 
-        return rankings
+        return ps4elo.calculate_rankings(elo_games, k_factor)
+
+    def summary_team_stats(self, channel, year, parameters):
+        rawelo = self.raw_elo(
+            channel, year, k_factor=parameters["k"], teams=True)
+        stats = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        mode = None
+
+        for team_id, team_stat in rawelo.iteritems():
+
+            statmap = stats[mode][team_id]
+            statmap[Keys.elorank] = team_stat.get_formatted_ranking()
+            statmap[Keys.history] = team_stat.get_history(
+                parameters["h"] or DEFAULT_GAME_HISTORY)
+
+            statmap[Keys.winratio] = team_stat.get_win_ratio()
+            statmap[Keys.played] = team_stat.games_played
+            statmap[Keys.game_wins] = team_stat.wins
+        return stats
 
     def summary_stats(self, channel, year, parameters):
         rawstats = self.raw_stats(channel, year)
-        rawelo = self.raw_elo(channel, year, k_factor = parameters["k"])
+        rawelo = self.raw_elo(channel, year, k_factor=parameters["k"])
 
         mode_to_merge = None
         for user, statmap in rawstats[mode_to_merge].iteritems():
@@ -209,15 +236,15 @@ class PS4History:
                 user_elo = rawelo[user]
 
                 statmap[Keys.elorank] = user_elo.get_formatted_ranking()
-                statmap[Keys.history] = user_elo.get_history(parameters["h"] or DEFAULT_GAME_HISTORY)
-
+                statmap[Keys.history] = user_elo.get_history(
+                    parameters["h"] or DEFAULT_GAME_HISTORY)
         return rawstats
 
-    def user_ranking(self, channel, year = None):
+    def user_ranking(self, channel, year=None):
         """
         Return a ranking of users in the channel
         """
-        rankmap = defaultdict(lambda: [0, 0]) # user => [wins, played]
+        rankmap = defaultdict(lambda: [0, 0])  # user => [wins, played]
 
         nextyear = calc_nextyear(year)
 
@@ -239,4 +266,4 @@ class PS4History:
             return float(wins) / played if played else 0
 
         # [ user1, user2, ... ]
-        return sorted(rankmap, key = userratio, reverse = True)
+        return sorted(rankmap, key=userratio, reverse=True)

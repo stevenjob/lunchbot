@@ -35,6 +35,7 @@ PS4Bot_commands = {
     "bail": (True, lambda self, *args: self.join_or_bail(*args, bail = True)),
     "scuttle": (True, lambda self, *args: self.maybe_scuttle_game(*args)),
     "stats": (True, lambda self, *args: self.handle_stats_request(*args)),
+    "teamstats": (True, lambda self, *args: self.handle_team_stats_request(*args)),
     "elo": (True, lambda self, *args: self.handle_stats_request(*args)),
     "credits": (True, lambda self, *args: self.send_credits(*args)),
     "topradge": (False, lambda self, *args: self.handle_stats_request(*args)),
@@ -765,6 +766,34 @@ class PS4Bot(Bot):
 
         if table_msg and anchor_message:
             self.latest_stats_table[channel].timestamp = table_msg.timestamp
+
+    def handle_team_stats_request(self, message, rest):
+        anchor_message = True
+        channel_name = None
+        year = None
+        parameters = empty_parameters()
+
+        if len(rest):
+            parsed = parse_stats_request(rest)
+            if not parsed:
+                self.send_message(":warning: ere {}: \"stats [year] [channel]\"".format(
+                    format_user(message.user)))
+                return
+            channel_name, year, parameters = parsed
+            anchor_message = (channel_name is None or channel_name == message.channel.name) \
+                    and (year is None or year.year == datetime.date.today().year)
+
+        if not channel_name:
+            channel_name = message.channel.name
+
+        try:
+            stats = self.history.summary_team_stats(channel_name, year = year, parameters = parameters)
+
+            self.update_stats_table(channel_name, stats, force_new = True, anchor_message = anchor_message)
+            self.latest_stats_table[channel_name].year = year
+            self.latest_stats_table[channel_name].parameters = parameters
+        except OverflowError as e:
+            self.send_message(":warning: overflow calculating elo stats, sort yerselves out")
 
     def handle_stats_request(self, message, rest):
         anchor_message = True

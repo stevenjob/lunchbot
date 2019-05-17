@@ -1,8 +1,10 @@
 import unittest
 import ps4elo
 
+
 def game_rankdelta(game, players):
     return ps4elo.ranking_delta_for_game(game, players, None)
+
 
 class TestPS4Elo(unittest.TestCase):
     def test_expected_score(self):
@@ -83,12 +85,12 @@ class TestPS4Elo(unittest.TestCase):
         game = ps4elo.Game(teams, 0, {})
 
         result = {
-            1:4,
-            2:16,
-            3:-4,
-            4:-4,
-            5:-1,
-            6:-20
+            1: 4,
+            2: 16,
+            3: -4,
+            4: -4,
+            5: -1,
+            6: -20
         }
 
         self.assertDictEqual(game_rankdelta(game, players), result)
@@ -127,7 +129,7 @@ class TestPS4Elo(unittest.TestCase):
         team4 = [2, 4]
 
         teams = [team1, team2]
-        scrubs = { 3: 4 }
+        scrubs = {3: 4}
         game1 = Game(teams, 0, scrubs)
         game2 = Game(teams, 1, {})
 
@@ -147,6 +149,65 @@ class TestPS4Elo(unittest.TestCase):
         self.assertEqual(result2[2].ranking, 1472)
         self.assertEqual(result2[3].ranking, 1528)
         self.assertEqual(result2[4].ranking, 1528)
+
+    def test_get_team_ids_for_game(self):
+        Game = ps4elo.Game
+
+        team1 = ["1", "2"]
+        team2 = ["3", "4"]
+
+        teams = [team1, team2]
+        game1 = Game(teams, 0, {})
+
+        result = ps4elo.get_team_ids_for_game(game1)
+        self.assertEqual(result[0], "1,2")
+        self.assertEqual(result[1], "3,4")
+
+    def test_team_ranking_delta_for_game(self):
+        team1 = ["1", "2"]
+        team2 = ["3", "4"]
+        teams = [team1, team2]
+        players = {
+            "1,2": ps4elo.Player(1, 2000),
+            "3,4": ps4elo.Player(1, 1500),
+        }
+        game1 = ps4elo.Game(teams, 0, {})
+        result1 = {
+            "1,2": 1,
+            "3,4": -10,
+        }
+
+        self.assertDictEqual(ps4elo.team_ranking_delta_for_game(
+            game1, players, None), result1)
+
+    def test_calculate_team_ranking(self):
+        def calc_ranks(games):
+            return ps4elo.calculate_team_rankings(games, None)
+        Game = ps4elo.Game
+
+        team1 = ["1", "2"]
+        team2 = ["3", "4"]
+        team3 = ["1", "3"]
+        team4 = ["2", "4"]
+
+        teams = [team1, team2]
+        scrubs = {"3": 4}
+        game1 = Game(teams, 0, scrubs)
+        game2 = Game(teams, 1, {})
+
+        games1 = [game1, game1]
+
+        result1 = calc_ranks(games1)
+
+        self.assertEqual(result1["1,2"].ranking, 1520)
+        self.assertEqual(result1["3,4"].ranking, 1480)
+
+        games2 = [game2, game2, game2]
+
+        result2 = calc_ranks(games2)
+        self.assertEqual(result2["1,2"].ranking, 1470)
+        self.assertEqual(result2["3,4"].ranking, 1529)
+
 
 if __name__ == '__main__':
     unittest.main()

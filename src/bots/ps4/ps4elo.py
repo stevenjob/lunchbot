@@ -1,26 +1,34 @@
 initial_ranking = 1500
 default_k_factor = 20
 scrub_modifier = 1.1
-minimum_games_played = 10
+
 
 class Result:
     win = 1
     loss = 0
 
+
 class Player:
-    def __init__(self, id, ranking=initial_ranking):
+    def __init__(self, id, ranking=initial_ranking, minimum_games_played=10):
         self.id = id
         self.ranking = ranking
         self.games_played = 0
         self.historical_ranking = []
+        self.wins = 0
+        self.minimum_games_played = minimum_games_played
+
+    def get_win_ratio(self):
+        winratio = float(self.wins) / \
+            float(self.games_played) if self.games_played else 0
+        return format(winratio, ".2f")
 
     def get_name(self):
-        if self.games_played > minimum_games_played:
+        if self.games_played > self.minimum_games_played:
             return self.id
         return self.id + '*'
 
     def get_formatted_ranking(self):
-        if self.games_played > minimum_games_played:
+        if self.games_played > self.minimum_games_played:
             return self.ranking
         return str(self.ranking) + '?'
 
@@ -53,6 +61,7 @@ class HistoricalRank:
         self.delta = delta
         self.scrub_modifier = scrub_modifier
 
+
 class Game:
     def __init__(self, teams, winning_team_index, scrubs):
         self.teams = teams
@@ -62,9 +71,11 @@ class Game:
     def player_ids(self):
         return reduce(list.__add__, self.teams)
 
+
 def expected_score(ranking, other_ranking):
     diff = 10 ** ((other_ranking - ranking) / float(400))
     return float(1) / (1 + diff)
+
 
 def ranking_delta(ranking, other_ranking, result, k_factor):
     if not k_factor:
@@ -82,20 +93,24 @@ def ranking_delta(ranking, other_ranking, result, k_factor):
 
     return initial_delta
 
+
 def combined_ranking_for_team(team, players):
     if len(team) == 0:
         return 0
     return sum(map(lambda player_id: player_from_id(players, player_id).ranking, team)) / len(team)
 
+
 def other_team_ranking(teams, players):
     merged_teams = reduce(list.__add__, teams)
     return combined_ranking_for_team(merged_teams, players)
+
 
 def ranking_delta_for_game(game, players, k_factor):
     teams = game.teams
     winning_team_index = game.winning_team_index
 
-    team_rankings = map(lambda team: combined_ranking_for_team(team, players), teams)
+    team_rankings = map(
+        lambda team: combined_ranking_for_team(team, players), teams)
 
     players_delta = {}
     for index, team in enumerate(teams):
@@ -103,7 +118,8 @@ def ranking_delta_for_game(game, players, k_factor):
             if index == winning_team_index:
                 team_result = Result.win
 
-                other_teams = teams[:winning_team_index] + teams[winning_team_index+1 :]
+                other_teams = teams[:winning_team_index] + \
+                    teams[winning_team_index+1:]
 
                 other_team_rank = other_team_ranking(other_teams, players)
             else:
@@ -111,20 +127,24 @@ def ranking_delta_for_game(game, players, k_factor):
                 other_team_rank = team_rankings[winning_team_index]
 
             player_ranking = player_from_id(players, player_id).ranking
-            rank_delta = ranking_delta(player_ranking, other_team_rank, team_result, k_factor)
+            rank_delta = ranking_delta(
+                player_ranking, other_team_rank, team_result, k_factor)
             players_delta[player_id] = rank_delta
 
     return players_delta
+
 
 def calculate_scrub_modifier(player, game):
     if player.id in game.scrubs:
         return scrub_modifier ** game.scrubs[player.id]
     return 1
 
+
 def player_from_id(players, player_id):
     if player_id in players:
         return players[player_id]
     return Player(player_id)
+
 
 def player_in_winning_team(player, game):
     team_index = -1
@@ -135,6 +155,7 @@ def player_in_winning_team(player, game):
 
     return team_index == game.winning_team_index
 
+
 def calculate_rankings(games, k_factor):
     players = {}
 
@@ -144,7 +165,8 @@ def calculate_rankings(games, k_factor):
             if player_id not in players:
                 players[player_id] = player_from_id(players, player_id)
 
-        individual_ranking_delta = ranking_delta_for_game(game, players, k_factor)
+        individual_ranking_delta = ranking_delta_for_game(
+            game, players, k_factor)
 
         for team in game.teams:
             for player in map(lambda player_id: player_from_id(players, player_id), team):
@@ -154,8 +176,64 @@ def calculate_rankings(games, k_factor):
                 if player_in_winning_team(player, game):
                     scrub_modifier = calculate_scrub_modifier(player, game)
 
-                player.ranking += round(individual_ranking_delta[player.id] * scrub_modifier)
+                player.ranking += round(
+                    individual_ranking_delta[player.id] * scrub_modifier)
                 player.historical_ranking.append(HistoricalRank(
                     player.ranking, team, individual_ranking_delta, scrub_modifier))
 
     return players
+
+
+def team_ranking_delta_for_game(game, teams, k_factor):
+
+    winning_team_index = game.winning_team_index
+
+    team_rankings = map(
+        lambda team: team.ranking, teams.values())
+
+    team_ids = get_team_ids_for_game(game)
+    players_delta = {}
+    for index, team_id in enumerate(team_ids):
+        if index == winning_team_index:
+            team_result = Result.win
+
+            other_teams = team_ids[:winning_team_index] + \
+                team_ids[winning_team_index+1:]
+
+            other_team_rank = other_team_ranking(other_teams, teams)
+        else:
+            team_result = Result.loss
+            other_team_rank = team_rankings[winning_team_index]
+
+        team_ranking = player_from_id(teams, team_id).ranking
+
+        rank_delta = ranking_delta(
+            team_ranking, other_team_rank, team_result, k_factor)
+        players_delta[team_id] = rank_delta
+
+    return players_delta
+
+
+def get_team_ids_for_game(game):
+    return map(lambda team: ','.join(sorted(team)), game.teams)
+
+
+def calculate_team_rankings(games, k_factor):
+    teams = {}
+
+    for game in games:
+        team_ids = get_team_ids_for_game(game)
+        for team_id in team_ids:
+            if team_id not in teams:
+                teams[team_id] = player_from_id(teams, team_id)
+
+        result_delta = team_ranking_delta_for_game(game, teams, k_factor)
+
+        for team in map(lambda player_id: player_from_id(teams, player_id), team_ids):
+            team.games_played += 1
+            if (result_delta[team.id] > 0):
+                team.wins += 1
+            team.ranking += result_delta[team.id]
+            team.historical_ranking.append(HistoricalRank(
+                team.ranking, game.player_ids, result_delta, 1))
+    return teams
